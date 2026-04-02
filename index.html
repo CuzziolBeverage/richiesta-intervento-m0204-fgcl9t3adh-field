@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Richiesta Intervento — Cuzziol Drink</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700;900&display=swap');
 :root {
@@ -98,6 +99,7 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.65; }
 .btn-invia:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--orange-dark); }
 .btn-invia svg { width: 20px; height: 20px; flex-shrink: 0; }
 .action-note { font-family: var(--aptos); font-size: 0.74rem; color: #bbb; text-align: center; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* TOAST */
 .toast { position: fixed; bottom: 32px; right: 32px; background: var(--dark); color: white; padding: 14px 22px; border-radius: 12px; font-family: var(--aptos); font-size: 0.85rem; font-weight: 600; box-shadow: 0 8px 32px rgba(0,0,0,0.25); opacity: 0; transform: translateY(16px) scale(0.96); transition: all 0.3s cubic-bezier(.34,1.56,.64,1); pointer-events: none; z-index: 9999; display: flex; align-items: center; gap: 10px; border-left: 4px solid var(--orange); }
@@ -494,29 +496,70 @@ function generatePDF(nomeLocale, indirizzo, nomeRef, telefono, email, descrizion
 }
 
 // ===== INVIA RICHIESTA =====
+// ===== EMAILJS INIT =====
+emailjs.init('D3xnZk5OLZ8Rs0xeR');
+
+// ===== INVIA RICHIESTA =====
 async function inviaRichiesta() {
-  const nomeLocale     = document.getElementById('nomeLocale').value.trim();
-  const indirizzo      = document.getElementById('indirizzo').value.trim();
-  const nomeRef        = document.getElementById('nomeReferente').value.trim();
-  const telefono       = document.getElementById('telefono').value.trim();
-  const email          = document.getElementById('email').value.trim();
-  const descrizione    = document.getElementById('descrizione').value.trim();
-  const nomeAgente     = document.getElementById('nomeAgente').value.trim();
-  const data           = getDataFormatted();
-  const flags          = getFlags();
+  const nomeLocale  = document.getElementById('nomeLocale').value.trim();
+  const indirizzo   = document.getElementById('indirizzo').value.trim();
+  const nomeRef     = document.getElementById('nomeReferente').value.trim();
+  const telefono    = document.getElementById('telefono').value.trim();
+  const email       = document.getElementById('email').value.trim();
+  const descrizione = document.getElementById('descrizione').value.trim();
+  const nomeAgente  = document.getElementById('nomeAgente').value.trim();
+  const data        = getDataFormatted();
+  const flags       = getFlags();
 
-  if (!nomeLocale)          { showToast('⚠️  Inserisci il Nome del Locale', true); return; }
-  if (!nomeRef)             { showToast('⚠️  Inserisci il tuo Nome', true); return; }
-  if (!telefono)            { showToast('⚠️  Inserisci il Telefono', true); return; }
-  if (flags.length === 0)   { showToast('⚠️  Seleziona almeno un tipo di problema', true); return; }
-  if (!nomeAgente)          { showToast('⚠️  Inserisci il nome dell\'Agente di riferimento', true); return; }
+  if (!nomeLocale)        { showToast('⚠️  Inserisci il Nome del Locale', true); return; }
+  if (!nomeRef)           { showToast('⚠️  Inserisci il tuo Nome', true); return; }
+  if (!telefono)          { showToast('⚠️  Inserisci il Telefono', true); return; }
+  if (flags.length === 0) { showToast('⚠️  Seleziona almeno un tipo di problema', true); return; }
+  if (!nomeAgente)        { showToast('⚠️  Inserisci il nome dell\'Agente di riferimento', true); return; }
 
+  // Bottone in stato caricamento
+  const btn = document.querySelector('.btn-invia');
+  btn.disabled = true;
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="animation:spin 1s linear infinite;width:20px;height:20px"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg> Invio in corso…`;
+
+  // Genera PDF come base64
   const doc = generatePDF(nomeLocale, indirizzo, nomeRef, telefono, email, descrizione, nomeAgente, data, flags);
-  const safeName = nomeLocale.replace(/[^a-zA-Z0-9]/g, '_') || 'Modulo';
-  const safeDate = data.replace(/\//g, '-');
-  doc.save('Intervento_' + safeName + '_' + safeDate + '.pdf');
+  const pdfBase64 = doc.output('datauristring');
 
-  showToast('✅  Richiesta generata! Inviala via email al tuo referente Cuzziol.');
+  // Parametri template EmailJS
+  const templateParams = {
+    nome_locale:    nomeLocale,
+    indirizzo:      indirizzo || '—',
+    nome_referente: nomeRef,
+    telefono:       telefono,
+    email_cliente:  email || '—',
+    problemi:       flags.join('\n• '),
+    descrizione:    descrizione || '—',
+    data:           data,
+    nome_agente:    nomeAgente,
+    pdf_link:       pdfBase64,
+  };
+
+  try {
+    await emailjs.send('service_cxys307', 'template_wz30e92', templateParams);
+
+    // Scarica anche il PDF in locale
+    const safeName = nomeLocale.replace(/[^a-zA-Z0-9]/g, '_') || 'Modulo';
+    const safeDate = data.replace(/\//g, '-');
+    doc.save('Intervento_' + safeName + '_' + safeDate + '.pdf');
+
+    showToast('✅  Richiesta inviata con successo!');
+
+    // Reset bottone
+    btn.disabled = false;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Invia Richiesta`;
+
+  } catch (err) {
+    console.error('EmailJS error:', err);
+    showToast('❌  Errore nell\'invio. Riprova o contatta il supporto.', true);
+    btn.disabled = false;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Invia Richiesta`;
+  }
 }
 </script>
 </body>
